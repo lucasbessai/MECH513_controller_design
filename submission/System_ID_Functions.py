@@ -49,15 +49,36 @@ def signal_process(
         data,
         coh_thresh=0.8,
         min_puu_frac=1e-3,
-        fmax_frac=0.9
+        fmax_frac=0.9,
+        standardize=True
     ):
     """
     Returns a dict with {omega, G, Cuy, mask, fs, t, u, y}.
     Mask keeps points: Cuy>=coh_thresh, Puu above noise floor, and f<=fmax_frac*fN.
+    
+    Parameters
+    ----------
+    data : np.ndarray
+        Input-output data with columns [t, u, y]
+    coh_thresh : float, optional
+        Coherence threshold. Defaults to 0.8
+    min_puu_frac : float, optional
+        Minimum Puu fraction. Defaults to 1e-3
+    fmax_frac : float, optional
+        Maximum frequency fraction. Defaults to 0.9
+    standardize : bool, optional
+        If True, subtract mean from u and y before processing. Defaults to True
     """
     t = data[:, 0]
     u = data[:, 1]
     y = data[:, 2]
+
+    # Standardize data (subtract mean)
+    if standardize:
+        u_mean = np.mean(u)
+        y_mean = np.mean(y)
+        u = u - u_mean
+        y = y - y_mean
 
     T = t[1] - t[0]
     fs = 1.0 / T
@@ -85,8 +106,8 @@ def signal_process(
         mask = mask,
         fs = fs,
         t = t,
-        u = u,
-        y = y,
+        u = u,  # standardized if standardize=True
+        y = y,  # standardized if standardize=True
         csd = (Puy, Puu, Pyy)
     )
   
@@ -183,19 +204,31 @@ def compare(x_train, data_test, m, n):
 
     fit_error(A_test, b_test, x_train, m, n)
 
-def response_error(data, G, prin=False, plot=False):
+def response_error(data, G, prin=False, plot=False, standardize=True):
 
     t = data[:, 0]
     u = data[:, 1]
     y = data[:, 2]
     N = t.size
 
-    t_ID, y_ID = ct.forced_response(G, t, u)
+    # Standardize data (subtract mean)
+    if standardize:
+        u_mean = np.mean(u)
+        y_mean = np.mean(y)
+        u_std = u - u_mean
+        y_std = y - y_mean
+    else:
+        u_std = u
+        y_std = y
+        u_mean = 0.0
+        y_mean = 0.0
+
+    t_ID, y_ID = ct.forced_response(G, t, u_std)
     
-    e = y_ID - y
+    e = y_ID - y_std
 
     e_var = np.var(e, ddof=0)
-    y_var = np.var(y, ddof=0)
+    y_var = np.var(y_std, ddof=0)
 
     nmse_t = e_var / y_var
     VAF_test = (1 - e_var/y_var) * 100
@@ -206,18 +239,19 @@ def response_error(data, G, prin=False, plot=False):
 
     # Compute and plot errors
     e_abs = np.abs(e)
-    y_max = np.max(np.abs(y))
-    e_rel = e_abs / y_max
+    y_max = np.max(np.abs(y_std))
+    e_rel = e_abs / (y_max + 1e-16)
 
     if plot:
-        # Plot test data
+        # Plot test data (show original unstandardized data)
         fig, ax = plt.subplots(2, 1)   
         ax[0].set_ylabel(r'$u(t)$ (V)')
         ax[1].set_ylabel(r'$y(t)$ (LPM)')
         # Plot data
         ax[0].plot(t, u, '--', label='input', color='C0')
         ax[1].plot(t, y, label='output', color='C1')
-        ax[1].plot(t_ID, y_ID, '-.', label="IDed output", color='C2')
+        # Add mean back to y_ID for plotting
+        ax[1].plot(t_ID, y_ID + y_mean, '-.', label="IDed output", color='C2')
         for a in np.ravel(ax):
             a.set_xlabel(r'$t$ (s)')
             a.legend(loc='upper right')

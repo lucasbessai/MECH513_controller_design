@@ -21,12 +21,18 @@ def quantify_error(datasets, m, n):
         y = data[:, 2]
         N = t.size
 
-        t_ID, y_ID = ct.forced_response(G, t, u)
+        # Standardize data (subtract mean)
+        u_mean = np.mean(u)
+        y_mean = np.mean(y)
+        u_std = u - u_mean
+        y_std = y - y_mean
+
+        t_ID, y_ID = ct.forced_response(G, t, u_std)
         
-        e = y_ID - y
+        e = y_ID - y_std
 
         e_var = np.var(e, ddof=0)
-        y_var = np.var(y, ddof=0)
+        y_var = np.var(y_std, ddof=0)
 
         nmse_t = e_var / y_var
         VAF_test = (1 - nmse_t) * 100

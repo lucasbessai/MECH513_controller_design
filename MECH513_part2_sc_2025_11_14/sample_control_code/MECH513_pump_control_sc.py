@@ -11,6 +11,7 @@ from scipy import integrate
 # from scipy import signal
 from scipy.stats import norm
 import control
+import pathlib
 
 # %%
 # Plotting parameters
@@ -47,7 +48,7 @@ w_shared = np.logspace(w_shared_low, w_shared_high, N_w)
 # Uncertainty weight
 # Dummy uncertainty weight! You must change!
 # This weight is from a multiplicative uncertainty model. 
-W2 = control.TransferFunction([2.196e4, 3.471e4, 1.607e4, 2269], [1, 5.577e4, 3.763e4, 3407],
+W2 = control.TransferFunction([3.219e4, 9.473e4, 5.425e4, 3932], [1, 8.177e4, 6.09e4, 1.06e4],
                               inputs=["u"],
                               outputs=["y_Delta"],
                               name="W2")
@@ -148,8 +149,12 @@ C = K
 # %%
 # Reference
 
+# Get the directory where this script is located
+script_dir = pathlib.Path(__file__).parent
+csv_path = script_dir / "RL_temp_motor_mod.csv"
+
 data = np.loadtxt(
-    "RL_temp_motor_mod.csv",
+    csv_path,
     dtype=float,
     delimiter=',',
     skiprows=1,
