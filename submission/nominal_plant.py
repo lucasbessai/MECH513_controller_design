@@ -11,44 +11,6 @@ import pathlib
 import System_ID_Functions as sysid
 
 # %%
-# Plotting parameters
-# plt.rc('text', usetex=True)
-# plt.rc('font', family='serif', size=14)
-plt.rc('lines', linewidth=2)
-plt.rc('axes', grid=True)
-plt.rc('grid', linestyle='--')
-
-# Golden ratio
-gr = (1 + np.sqrt(5)) / 2
-# Figure height
-height = 11 / 2.54  # cm
-
-# %%
-# Read in all input-output (IO) data
-path = pathlib.Path('MECH513_part1_load_data_sc/load_data_sc/SINE_SWEEP_DATA/')
-all_files = sorted(path.glob("*.csv"))
-# all_files.sort()
-data = [
-    np.loadtxt(
-        filename,
-        dtype=float,
-        delimiter=',',
-        skiprows=1,
-        usecols=(0, 1, 2),
-    ) for filename in all_files
-]
-data = np.array(data)
-
-# %%
-# Load a dataset
-data_0 = data[0]
-data_1 = data[1]
-data_2 = data[2]
-data_3 = data[3]
-
-datasets = [data_0, data_1, data_2, data_3]
-
-# %%
 # Functions
 
 def off_nominals(datasets, m, n, plot=False):
@@ -101,9 +63,57 @@ def off_nominals(datasets, m, n, plot=False):
     return TFs
 
 
+def fit_plant_from_data(data, m, n, label='G'):
+    """Fit a transfer function from a single dataset with specified order.
+    
+    Parameters
+    ----------
+    data : np.ndarray
+        Input-output data with columns [t, u, y]
+    m : int
+        Numerator degree
+    n : int
+        Denominator degree
+    label : str, optional
+        Label for the transfer function. Defaults to 'G'
+    
+    Returns
+    -------
+    tuple
+        (label, control.TransferFunction) tuple
+    """
+    res = sysid.signal_process(data)
+    
+    G = res['G'][0]
+    omega = res['omega'][0]
+    A, b = sysid.form_LS_system(G, omega, m, n)
+    G_LS, x = sysid.LS_fit(A, b, m, n, prin=False)
+    
+    return (label, G_LS)
+
 
 # %% 
-def nominal_plant_median(datasets, m, n, plot=False):
+def nominal_plant_median(datasets, m, n, plot=False, additional_plants=None):
+    """Generate nominal plant as median of off-nominal plants.
+    
+    Parameters
+    ----------
+    datasets : list
+        List of datasets
+    m : int
+        Numerator degree
+    n : int
+        Denominator degree
+    plot : bool, optional
+        Whether to plot. Defaults to False
+    additional_plants : list, optional
+        List of additional (label, TF) tuples to include in plot. Defaults to None
+    
+    Returns
+    -------
+    control.TransferFunction
+        Nominal transfer function
+    """
     off_noms = off_nominals(datasets, m=m, n=n, plot=False)
 
     num_coeffs = np.array([np.ravel(G[1].num) for G in off_noms])
@@ -125,6 +135,10 @@ def nominal_plant_median(datasets, m, n, plot=False):
         ax[1].set_ylabel(r'Phase (deg)')
         for G in off_noms:
             ct.bode_plot(G[1], w_shared, dB=True, deg=True, title='', label=G[0], color='C0', linestyle='dashed')
+        # Plot additional plants if provided
+        if additional_plants is not None:
+            for G_add in additional_plants:
+                ct.bode_plot(G_add[1], w_shared, dB=True, deg=True, title='', label=G_add[0], color='C2', linestyle='dotted')
         ct.bode_plot(G_nom, w_shared, dB=True, deg=True, title='', label='G_nom', color='C3')
         fig.tight_layout()
     
@@ -135,10 +149,6 @@ def nominal_plant_median(datasets, m, n, plot=False):
 # sysid.response_error(data_1, G_nom, plot=True)
 # sysid.response_error(data_2, G_nom, plot=True)
 # sysid.response_error(data_3, G_nom, plot=True)
-# %% 
-off_noms = off_nominals(datasets, m=0, n=1, plot=False)
-
-G_nom = nominal_plant_median(datasets, m=0, n=1, plot=True)
 
 def plot_nom(G_nom):
     w_shared = np.logspace(-2, 2, 2000)  # rad/s
@@ -197,5 +207,37 @@ def choose_nominal_medoid(P_list, w, omega_weights=None, norm='hinf', score='mea
     j_star = int(np.argmin(s))
     return P_list[j_star], j_star, s, D
 
-# %%
+if __name__ == "__main__":
+    # Plotting parameters
+    # plt.rc('text', usetex=True)
+    # plt.rc('font', family='serif', size=14)
+    plt.rc('lines', linewidth=2)
+    plt.rc('axes', grid=True)
+    plt.rc('grid', linestyle='--')
+
+    # Read in all input-output (IO) data
+    path = pathlib.Path('MECH513_part1_load_data_sc/load_data_sc/SINE_SWEEP_DATA/')
+    all_files = sorted(path.glob("*.csv"))
+    data = [
+        np.loadtxt(
+            filename,
+            dtype=float,
+            delimiter=',',
+            skiprows=1,
+            usecols=(0, 1, 2),
+        ) for filename in all_files
+    ]
+    data = np.array(data)
+
+    # Load a dataset
+    data_0 = data[0]
+    data_1 = data[1]
+    data_2 = data[2]
+    data_3 = data[3]
+
+    datasets = [data_0, data_1, data_2, data_3]
+
+    off_noms = off_nominals(datasets, m=0, n=1, plot=False)
+    G_nom = nominal_plant_median(datasets, m=0, n=1, plot=True)
+
 

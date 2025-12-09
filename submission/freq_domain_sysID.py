@@ -10,44 +10,6 @@ import pathlib
 # My libraries
 import System_ID_Functions as sysid
 
-# %%
-# Plotting parameters
-# plt.rc('text', usetex=True)
-# plt.rc('font', family='serif', size=14)
-plt.rc('lines', linewidth=2)
-plt.rc('axes', grid=True)
-plt.rc('grid', linestyle='--')
-
-# Golden ratio
-gr = (1 + np.sqrt(5)) / 2
-# Figure height
-height = 11 / 2.54  # cm
-
-# %%
-# Read in all input-output (IO) data
-path = pathlib.Path('MECH513_part1_load_data_sc/load_data_sc/SINE_SWEEP_DATA/')
-all_files = sorted(path.glob("*.csv"))
-# all_files.sort()
-data = [
-    np.loadtxt(
-        filename,
-        dtype=float,
-        delimiter=',',
-        skiprows=1,
-        usecols=(0, 1, 2),
-    ) for filename in all_files
-]
-data = np.array(data)
-
-# %%
-# Load a dataset
-data_0 = data[0]
-data_1 = data[1]
-data_2 = data[2]
-data_3 = data[3]
-
-datasets = [data_0, data_1, data_2, data_3]
-
 #%%
 
 def quantify_error(datasets, m, n):
@@ -233,4 +195,37 @@ def quantify_error_table(datasets, m, n,
 # %% 
 # Print Quantify Error Table
 # _ = quantify_error_table(datasets, m=1, n=3)
-# %%
+
+if __name__ == "__main__":
+    # Plotting parameters
+    # plt.rc('text', usetex=True)
+    # plt.rc('font', family='serif', size=14)
+    plt.rc('lines', linewidth=2)
+    plt.rc('axes', grid=True)
+    plt.rc('grid', linestyle='--')
+
+    # Read in all input-output (IO) data
+    path = pathlib.Path('MECH513_part1_load_data_sc/load_data_sc/SINE_SWEEP_DATA/')
+    all_files = sorted(path.glob("*.csv"))
+    data = [
+        np.loadtxt(
+            filename,
+            dtype=float,
+            delimiter=',',
+            skiprows=1,
+            usecols=(0, 1, 2),
+        ) for filename in all_files
+    ]
+    data = np.array(data)
+
+    # Load a dataset
+    data_0 = data[0]
+    data_1 = data[1]
+    data_2 = data[2]
+    data_3 = data[3]
+
+    datasets = [data_0, data_1, data_2, data_3]
+
+    # Example usage
+    # quantify_error(datasets, m=0, n=1)
+    # _ = quantify_error_table(datasets, m=1, n=3)
