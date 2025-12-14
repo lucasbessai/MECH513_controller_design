@@ -78,7 +78,7 @@ G_3rd_order_nominal = nominal_plant.fit_plant_from_data(data_0, m=0, n=3, label=
 # Include the second-order plant in the plot
 print("\n=== Generating nominal plant ===")
 G_nom = nominal_plant.nominal_plant_median(datasets, m=m, n=n, plot=True, additional_plants=[G_3rd_order_nominal])
-
+print(f"Nominal plant: {G_nom}")
 # Compute response errors for each dataset
 print("\n=== Computing response errors ===")
 sysid.response_error(data_0, G_nom, plot=True)

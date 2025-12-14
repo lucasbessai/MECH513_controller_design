@@ -12,6 +12,7 @@ from scipy import integrate
 from scipy.stats import norm
 import control
 import pathlib
+import dkpy
 
 # %%
 # Plotting parameters
@@ -48,7 +49,8 @@ w_shared = np.logspace(w_shared_low, w_shared_high, N_w)
 # Uncertainty weight
 # Dummy uncertainty weight! You must change!
 # This weight is from a multiplicative uncertainty model. 
-W2 = control.TransferFunction([3.219e4, 9.473e4, 5.425e4, 3932], [1, 8.177e4, 6.09e4, 1.06e4],
+#3.219e4
+W2 = control.TransferFunction([1.062, 60.41, 134.6, 19.3], [1, 119.2, 443.6, 64.12],
                               inputs=["u"],
                               outputs=["y_Delta"],
                               name="W2")
@@ -59,70 +61,130 @@ print("W_2(s) = ", W2)
 # Dummy plant! You must change!
 # The ``tilde" means ``with units". This sample code has not done any normalization. 
 m, n = 0, 1
-P_tilde = control.TransferFunction([30], [1, 10])
+P_tilde = control.TransferFunction([22.67], [1, 10.46])
 
 DC_gain = P_tilde.dcgain()
 max_V = 5
-max_LPM = 15  # Dummy value. You must change. 
+slope = 2.437 #From step response data
+max_LPM = max_V * slope  # Dummy value. You must change. 
 
 # Normalize. 
 # Dummy value. You must change. 
-e_nor_ref = 0.7  # LPM, largest allowable error associated with the largest allowable reference
-u_nor_ref = max_V # V, largest allowable change in the control input due to the largest allowable reference
+#normalization constants:
+SD_noise = 0.107 #LPM
 
-P0 = control.TransferFunction(np.array(P_tilde.num).ravel(), np.array(P_tilde.den).ravel(),
-                              inputs=["u0"],
+r_nor = max_LPM #LPM
+u_nor_r = max_V #V
+e_nor_r = 0.05 * max_LPM #LPM
+
+n_nor = SD_noise #LPM
+u_nor_n = 0.02*max_V #V 
+e_nor_n = n_nor #LPM
+
+d_nor = 0.256 # V
+u_nor_d = d_nor
+e_nor_d = 0.01 * max_LPM #LPM
+
+#Get this from fft of reference
+w_r_h_Hz = 0.015  # Hz
+w_n_Hz = 3 # Hz
+
+P_nom = control.TransferFunction(np.array(P_tilde.num).ravel(), np.array(P_tilde.den).ravel(),
+                              inputs=["u_total"],
                               outputs=["y0"], 
-                              name="P0")
+                              name="P_nom")
 
-control.bode([P0, W2], w_shared, Hz=True)
+control.bode([P_nom, W2], w_shared, Hz=True)
 
 
 # %%
 # Other weights
-
-# Reference weight
-# Dummy value. You must change. 
 w_r_h_Hz = 1
 w_r_h = Hz2rps(w_r_h_Hz)
-Wr_tf = (1 / (s / w_r_h + 1))
-Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
-                              inputs=["r"],
-                              outputs=["r_filtered"],
-                              name="Wr")
-# control.bode(Wr)
 
-# Noise weight
-# Dummy value. You must change. 
-w_n_l_Hz = w_r_h_Hz * 50
-w_n_l = Hz2rps(w_n_l_Hz)
-Wn_tf = control.TransferFunction([0.2], [1])
-Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
-                              inputs=["n"],
-                              outputs=["n_filtered"],
-                              name="Wn")
-# control.bode(Wn)
+#Reference Scaling
+R = control.TransferFunction([1], [r_nor],
+                              inputs=["r_tilde"],
+                              outputs=["r_scaled"],
+                              name="R")
 
-# Control weight
-# Dummy value. You must change. 
-w_u_l_Hz = w_r_h_Hz * 5
-Wu_tf = (1 - 1 / (s / Hz2rps(w_u_l_Hz) + 1))**2
-Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).ravel(),
-                              inputs=["u"],
-                              outputs=["z[0]"],
-                              name="Wu")
-# control.bode(Wu)
+N = control.TransferFunction([1], [SD_noise],
+                              inputs=["n_tilde"],
+                              outputs=["n_scaled"],
+                              name="N")
 
-# Error weight
+sum_ideal_error = control.summing_junction(
+    inputs=["r_scaled", "y0"],
+    outputs=["e_ideal"],
+    name="sum_ideal_error"
+)
+
 # Dummy value. You must change. 
 We_tf = 1 / (s / (w_r_h / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
                               outputs=["z[1]"],
                               name="We")
+
+sum_noise = control.summing_junction(
+    inputs = ["n_scaled","y0"],
+    outputs = ["yn"],
+    name = "sum_noise"
+)
+
+sum_error = control.summing_junction(
+    inputs = ["r_scaled","-yn"],
+    outputs = ["e"],
+    name = "sum_error"
+)
+
+sum_u = control.summing_junction(
+    inputs = ["u","u_Delta"],
+    outputs = ["u_total"],
+    name = "sum_u"
+)
+
+w_u_l_Hz = w_r_h_Hz * 5
+Wu_tf = (1 - 1 / (s / Hz2rps(w_u_l_Hz) + 1))**2
+
+Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).ravel(),
+                              inputs=["u"],
+                              outputs=["z[0]"],
+                              name="Wu")
+
+
+
+# Reference weight
+# Dummy value. You must change. 
+
+# Wr_tf = (1 / (s / w_r_h + 1))
+# Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
+#                               inputs=["r"],
+#                               outputs=["r_filtered"],
+#                               name="Wr")
+# # control.bode(Wr)
+
+# # Noise weight
+# # Dummy value. You must change. 
+# w_n_l_Hz = w_r_h_Hz * 50
+# w_n_l = Hz2rps(w_n_l_Hz)
+# Wn_tf = control.TransferFunction([0.2], [1])
+# Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
+#                               inputs=["n"],
+#                               outputs=["n_filtered"],
+#                               name="Wn")
+# control.bode(Wn)
+
+# Control weight
+# Dummy value. You must change. 
+
 # control.bode(Wu)
 
-control.bode([We, Wr, Wn, Wu], w_shared, Hz=True)
+# Error weight
+
+# control.bode(Wu)
+
+control.bode([We, Wu], w_shared, Hz=True)
 
 """
 # Interconnect
@@ -131,19 +193,96 @@ control.bode([We, Wr, Wn, Wu], w_shared, Hz=True)
 
 """
 
+# IMPORTANT: Order inputs/outputs for proper M-Delta structure:
+#   - Uncertainty channels FIRST
+#   - Then performance/disturbance channels
+#   - Controller output (u) LAST in inputs
+#   - Controller input (e) LAST in outputs
+#
+# Correct ordering:
+#   Inputs:  [u_Delta, r_tilde, n_tilde, u]  → uncertainty first, then disturbances, then control
+#   Outputs: [y_Delta, z[1], z[0], e]        → uncertainty first, then performance, then controller
+P = control.interconnect(
+    syslist=[R, N, sum_ideal_error, We, Wu, sum_noise, sum_error, sum_u, W2, P_nom],
+    inplist=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
+    outlist=['y_Delta', 'z[1]', 'z[0]', 'e'],
+    inputs=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
+    outputs=['y_Delta', 'z[1]', 'z[0]', 'e']
+)
+# print("Generalized plant P:")
+# print(P)
+P.dt = 0  # Continuous-time system
+n_y = 1  # Controller input dimension (e)
+n_u = 1  # Controller output dimension (u)
+
+# K_hinf_syn = control.hinfsyn(P, n_y, n_u)
+
+#print("K_hinf_syn = ", K_hinf_syn)
+
+
+
 # %%
-# Use dkpy
+# DK-iteration using dkpy
 
-# Dummy controller, you must change!
-w_c = 1
-L_des = w_c / s
+# DK-iteration setup
+print("Running DK-iteration...")
+dk_iter = dkpy.DkIterAutoOrder(
+    controller_synthesis=dkpy.HinfSynLmi(
+        lmi_strictness=1e-7,
+        solver_params=dict(solver="MOSEK", eps=1e-8, verbose=False),
+    ),
+    structured_singular_value=dkpy.SsvLmiBisection(
+        bisection_atol=1e-5,
+        bisection_rtol=1e-5,
+        max_iterations=1000,
+        lmi_strictness=1e-7,
+        solver_params=dict(solver="MOSEK", eps=1e-9, verbose=False),
+        n_jobs=1,
+    ),
+    d_scale_fit=dkpy.DScaleFitSlicot(),
+    max_mu=1,
+    max_mu_fit_error=1e-2,
+    max_iterations=10,
+    max_fit_order=5,
+)
 
-K = L_des / P0
-print("C = ", K, "\n")
+# Uncertainty structure: 1×1 (uncertainty) + 2×2 (performance) = 3×3 Delta
+uncertainty_structure = [
+    dkpy.ComplexFullBlock(1, 1),
+    dkpy.ComplexFullBlock(2, 2),
+]
+block_structure = np.array([[1, 1], [2, 2]])
+omega = np.logspace(-3, 3, 61)
+n_y, n_u = 1, 1
 
-# The rest of the code calls the controller C
-# C must be in transfer function form. 
-C = K
+# Synthesize controller
+K, N, mu, iter_results, info = dk_iter.synthesize(P, n_y, n_u, omega, block_structure)
+
+print(f"DK-iteration complete: μ = {mu:.4f}, iterations = {len(iter_results)}, controller states = {K.A.shape[0]}")
+
+print("K = ", K)
+
+# print(f"mu={mu}")
+
+#USE HINFSYN FIRST TO GET A CONTROLLER
+
+
+
+
+# Extract controller from hinfsyn output
+# hinfsyn returns (K, N, gamma, info) where:
+#   K: controller (StateSpace)
+#   N: closed-loop system (StateSpace)
+#   gamma: H-infinity norm (float)
+#   info: additional info
+# K_ss = K_hinf_syn[0]  # Controller as StateSpace
+# gamma = K_hinf_syn[2]  # H-infinity norm
+# print(f"Controller H-infinity norm (gamma) = {gamma}")
+# print("Controller (StateSpace):\n", K_ss, "\n")
+
+# Convert controller to transfer function form for simulation
+C = control.ss2tf(K)
+print("Controller (TransferFunction):\n", C, "\n")
 
 
 # %%
@@ -206,11 +345,16 @@ temp_raw_max = 90  # C
 # Extract temperature data 
 temp_raw = temp_raw_raw[t_start_index:t_end_index]
 
+# Normalize and center temperature data
+temp_norm = (temp_raw - temp_raw_min) / (temp_raw_max - temp_raw_min)
+
+# Define Reference in terms of flow rate
 # Convert temp into a reference LPM
-# You must change this!
-r_raw_tilde = (temp_raw - temp_raw_min) * 0.3
+r_raw_tilde = temp_norm * max_LPM
+
 # Now filter using w_r_h
 a = w_r_h
+#a = 0.5
 _, r_tilde = control.forced_response(1 / (1 / a * s + 1), t, r_raw_tilde, 0)
 
 r_raw = r_raw_tilde  # r_raw would be unfiltered, without units, if you did some normalization
@@ -229,7 +373,7 @@ plt.show()
 # Noise
 np.random.seed(123321)
 noise_raw = np.random.normal(0, 1, t.shape[0])
-sigma_n = 0.25  # LPM, dummy value. You must change. 
+sigma_n = SD_noise  # LPM, dummy value. You must change. 
 noise =  sigma_n * noise_raw * 1  # Change the 1 to a zero to ``turn off" noise in order to debug. 
 
 
@@ -325,7 +469,9 @@ def simulate(P, C, t, r_raw, r, noise, u_range, z_range):
         atol=1e-6,
         method='RK45',
     )
-
+#   rtol=1e-6,
+#         atol=1e-8,
+#         method='LSODA',
     # Extract states.
     sol_x = sol.y
     x_P = sol_x[:n_x_P, :]
@@ -366,7 +512,7 @@ def simulate(P, C, t, r_raw, r, noise, u_range, z_range):
 
 # Run simulation
 # C must be in transfer function form. 
-y, u, e = simulate(P0, C, t, r_raw, r, noise, u_range, z_range)
+y, u, e = simulate(P_nom, C, t, r_raw, r, noise, u_range, z_range)
 
 
 # %%
@@ -377,7 +523,7 @@ u_tilde = u
 e_tilde = e
 
 # Max acceptable error and control values. 
-e_nor_ref = 0.56  # Dummy variable, you change
+e_nor_ref = e_nor_r 
 u_nor_ref = 5  # V
 
 
