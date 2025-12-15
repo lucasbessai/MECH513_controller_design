@@ -13,6 +13,13 @@ from scipy.stats import norm
 import control
 import pathlib
 import dkpy
+import os
+
+# %%
+# Create plots directory if it doesn't exist
+script_dir = pathlib.Path(__file__).parent
+plots_dir = script_dir / "plots"
+plots_dir.mkdir(exist_ok=True)
 
 # %%
 # Plotting parameters
@@ -95,6 +102,7 @@ P_nom = control.TransferFunction(np.array(P_tilde.num).ravel(), np.array(P_tilde
                               name="P_nom")
 
 control.bode([P_nom, W2], w_shared, Hz=True)
+plt.gcf().savefig(plots_dir / 'bode_nominal_plant_and_uncertainty_weight_W2.png', dpi=150, bbox_inches='tight')
 
 
 # %%
@@ -116,7 +124,7 @@ w_r_h = Hz2rps(w_r_h_Hz)
 
 Wr_tf = (1 / (s / w_r_h + 1))
 Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
-                              inputs=["r"],
+                              inputs=["r_tilde"],
                               outputs=["r_filtered"],
                               name="Wr")
 
@@ -124,7 +132,7 @@ Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).r
 w_n_l = Hz2rps(w_n_Hz)
 Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
 Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
-                              inputs=["n"],
+                              inputs=["n_tilde"],
                               outputs=["n_filtered"],
                               name="Wn")
 
@@ -140,10 +148,10 @@ k = 2
 epsilon = 10**(-30 / 20)
 Me = 10**(5 / 20)
 w_e = Hz2rps(w_r_h_Hz + 0.2)
-We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
+#We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
 
 # w_e = Hz2rps(w_r_h_Hz + 0.2)
-# We_tf = 1 / (s / (w_e / 1) + 1)
+We_tf = 1 / (s / (w_e / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
                               outputs=["z[1]"],
@@ -208,6 +216,7 @@ Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).r
 # control.bode(Wu)
 
 control.bode([We, Wu, Wr, Wn], w_shared, Hz=True)
+plt.gcf().savefig(plots_dir / 'bode_all_weights_We_Wu_Wr_Wn.png', dpi=150, bbox_inches='tight')
 
 """
 # Interconnect
@@ -249,6 +258,8 @@ n_u = 1  # Controller output dimension (u)
 
 # DK-iteration setup
 print("Running DK-iteration...")
+import logging
+logging.basicConfig(level=logging.INFO)
 dk_iter = dkpy.DkIterAutoOrder(
     controller_synthesis=dkpy.HinfSynLmi(
         lmi_strictness=1e-7,
@@ -265,8 +276,8 @@ dk_iter = dkpy.DkIterAutoOrder(
     d_scale_fit=dkpy.DScaleFitSlicot(),
     max_mu=1,
     max_mu_fit_error=1e-2,
-    max_iterations=10,
-    max_fit_order=5,
+    max_iterations=5,
+    max_fit_order=3,
 )
 
 # Uncertainty structure: 1×1 (uncertainty) + 2×2 (performance) = 3×3 Delta
@@ -286,6 +297,8 @@ print(f"DK-iteration complete: μ = {mu:.4f}, iterations = {len(iter_results)}, 
 print("K = ", K)
 
 print(f"mu={mu}")
+if mu>1:
+    exit()
 
 
 #USE HINFSYN FIRST TO GET A CONTROLLER
@@ -314,12 +327,15 @@ T = control.feedback(P_nom * K, 1, -1)
 
 # fig, ax = plt.subplots()
 control.bode([1 / (1 + C * P_nom), 1/We], w_shared, Hz=True)
+plt.gcf().savefig(plots_dir / 'bode_sensitivity_and_weight_We.png', dpi=150, bbox_inches='tight')
 
 # fig, ax = plt.subplots()
 control.bode([S, T], w_shared, Hz=True)
+plt.gcf().savefig(plots_dir / 'bode_sensitivity_S_and_complementary_sensitivity_T.png', dpi=150, bbox_inches='tight')
 
 # fig, ax = plt.subplots()
 control.bode([C*S, 1/Wu], w_shared, Hz=True)
+plt.gcf().savefig(plots_dir / 'bode_control_sensitivity_and_weight_Wu.png', dpi=150, bbox_inches='tight')
 
 # %%
 # Reference
@@ -368,7 +384,7 @@ ax.plot(t, temp_raw)
 ax.set_xlabel(r'$t$ (s)')
 ax.set_ylabel(r'Temperature (°C)')
 fig.tight_layout()
-# fig.savefig('x.pdf')
+fig.savefig(plots_dir / 'temperature_raw_data.png', dpi=150, bbox_inches='tight')
 
 temp_raw_max = np.max(np.abs(temp_raw))
 temp_raw_min = np.min(np.abs(temp_raw))
@@ -403,8 +419,8 @@ ax.set_ylabel(r'$r(t)$ (LPM)')
 ax.plot(t, r, '--', label='$r(t)$', color='C3')
 ax.legend(loc='upper right')
 fig.tight_layout()
+fig.savefig(plots_dir / 'reference_signal_r_t.png', dpi=150, bbox_inches='tight')
 plt.show()
-# fig.savefig('x.pdf')
 
 # Noise
 np.random.seed(123321)
@@ -452,9 +468,26 @@ def simulate(P, C, t, r_raw, r, noise, u_range, z_range):
     # Set up closed-loop ICs.
     x_cl_IC = np.block([[x_P_IC], [x_C_IC]]).ravel()
 
+    # Progress tracking for logging
+    last_printed_idx = [-1]  # Use list to allow modification in nested function
+    total_steps = len(time)
+    
     # Define closed-loop system. This will be passed to solve_ivp.
     def closed_loop(t, x):
         """Closed-loop system"""
+        
+        # Progress logging: find closest time index and print every 1000 steps
+        if len(time) > 0:
+            # Find the closest time index
+            idx = np.searchsorted(time, t, side='left')
+            if idx >= len(time):
+                idx = len(time) - 1
+            
+            # Print progress every 1000 time steps
+            if idx // 1000 > last_printed_idx[0]:
+                last_printed_idx[0] = idx // 1000
+                progress_pct = (idx / total_steps) * 100
+                print(f"Simulation progress: step {idx}/{total_steps} ({progress_pct:.1f}%), t = {t:.2f} s")
 
         # Reference at current time.
         r_now = np.interp(t, time, r).reshape((1, 1))
@@ -496,18 +529,20 @@ def simulate(P, C, t, r_raw, r, noise, u_range, z_range):
 
 
     # Find time-domain response by integrating the ODE
+    # IMPORTANT: Controller has very large coefficients (10^15) causing STIFF dynamics
+    # RK45 takes tiny steps for stiff systems → use LSODA (auto stiff/non-stiff switching)
     sol = integrate.solve_ivp(
         closed_loop,
         (t_start, t_end),
         x_cl_IC,
         t_eval=t,
-        rtol=1e-8,
+        rtol=1e-4,      # Relaxed tolerance for faster simulation
         atol=1e-6,
-        method='RK45',
+        method='LSODA',  # Auto-switches between stiff/non-stiff - MUCH faster for controllers
     )
-#   rtol=1e-6,
-#         atol=1e-8,
-#         method='LSODA',
+    
+    print(f"Simulation complete: {total_steps}/{total_steps} steps (100.0%), t = {time[-1]:.2f} s")
+    
     # Extract states.
     sol_x = sol.y
     x_P = sol_x[:n_x_P, :]
@@ -548,6 +583,7 @@ def simulate(P, C, t, r_raw, r, noise, u_range, z_range):
 
 # Run simulation
 # C must be in transfer function form. 
+print("Running simulation...")
 y, u, e = simulate(P_nom, C, t, r_raw, r, noise, u_range, z_range)
 
 
@@ -577,7 +613,7 @@ ax[1].plot(t, u_nor_ref * np.ones(t.shape[0],), '--', label=r'$u_{nor, r}$', col
 ax[0].legend(loc='lower right')
 ax[1].legend(loc='lower right')
 fig.tight_layout()
-# fig.savefig('y_u_time_dom_response_tilde.pdf')
+fig.savefig(plots_dir / 'output_and_control_signal.png', dpi=150, bbox_inches='tight')
 
 # Plot
 fig, ax = plt.subplots(figsize=(height * gr, height))
@@ -587,7 +623,7 @@ ax.plot(t, y_tilde, '-', label=r'$\tilde{y}(t)$', color='C0')
 ax.plot(t, r_tilde, '--', label=r'$\tilde{r}(t)$', color='C3')
 ax.legend(loc='best')
 fig.tight_layout()
-# fig.savefig('y_time_dom_response_tilde.pdf')
+fig.savefig(plots_dir / 'output_y_t.png', dpi=150, bbox_inches='tight')
 
 # Plot
 fig, ax = plt.subplots(figsize=(height * gr, height))
@@ -598,7 +634,7 @@ ax.plot(t, e_nor_ref * np.ones(t.shape[0],), '--', label=r'$e_{nor, r}$', color=
 ax.plot(t, -e_nor_ref * np.ones(t.shape[0],), '--', color='C6')
 ax.legend(loc='upper right')
 fig.tight_layout()
-# fig.savefig('e_time_dom_response_tilde.pdf')
+fig.savefig(plots_dir / 'error_e_t.png', dpi=150, bbox_inches='tight')
 
 # Plot
 fig, ax = plt.subplots(2, 1, figsize=(height * gr, height))
@@ -615,7 +651,7 @@ ax[1].plot(t, u_nor_ref * np.ones(t.shape[0],), '--', label=r'$u_{nor, r}$', col
 ax[0].legend(loc='lower right')
 ax[1].legend(loc='lower right')
 fig.tight_layout()
-# fig.savefig('u_e_time_dom_response_tilde.pdf')
+fig.savefig(plots_dir / 'error_and_control_signal.png', dpi=150, bbox_inches='tight')
 
 
 # %%
@@ -629,7 +665,7 @@ ax.plot(bins, 1 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-(bins - mu) ** 2 / (2 *
 ax.set_xlabel(r'$\tilde{e}$ (LPM)')
 ax.set_ylabel('Normalized Count')
 fig.tight_layout()
-# fig.savefig('e_tilde_hist.pdf')
+fig.savefig(plots_dir / 'error_histogram.png', dpi=150, bbox_inches='tight')
 
 
 # %%
@@ -646,7 +682,7 @@ ax.set_xlabel(r'$t$ (s)')
 ax.plot(t, power, '-', label=r'$P(t)$', color='C0')
 ax.legend(loc='best')
 fig.tight_layout()
-# fig.savefig('power_fb_vs_time.pdf')
+fig.savefig(plots_dir / 'power_vs_time.png', dpi=150, bbox_inches='tight')
 
 # Integrate using Simpson's rule to get total ``energy" in units of V^2 s
 energy = integrate.simpson(power, x=t)
