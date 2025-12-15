@@ -120,9 +120,9 @@ Wr = control.tf(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
                 inputs=["r"], outputs=["r_f"], name="Wr")
 
 
-w_n_l = Hz2rps(w_n_Hz)
+w_n_l = Hz2rps(w_n_Hz - 1)
 # Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
-Wn_tf = control.tf([1], [1])
+# Wn_tf = control.tf([1], [1])
 Wn_tf = (s / (s + w_n_l)) 
 Wn = control.tf(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
                 inputs=["n"], outputs=["n_f"], name="Wn")
@@ -138,14 +138,14 @@ sum_ideal_error = control.summing_junction(
     name="sum_ideal_error"
 )
 
-k = 2
+k = 1
 epsilon = 10**(-30 / 20)
 Me = 10**(5 / 20)
-w_e = Hz2rps(w_r_h_Hz + 0.1)
+w_e = Hz2rps(w_r_h_Hz + 0.3)
 We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
 
 # w_e = Hz2rps(w_r_h_Hz + 0.2)
-We_tf = 1 / (s / (w_e / 1) + 1)
+# We_tf = 1 / (s / (w_e / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
                               outputs=["z[1]"],
@@ -173,11 +173,11 @@ w_u_l = w_e
 Wu_tf = (1 - 1 / (s / w_u_l + 1))**2
 
 wbc = w_e
+
 Mu = 10**(10/20)
+Wu_tf = ((s + wbc / Mu**(1 / k)) / (s * (epsilon)**(1 / k) + wbc))**k
 
-# Wu_tf = ((s + wbc / Mu**(1 / k)) / (s * (epsilon)**(1 / k) + wbc))**k
-
-Wu_tf = (s / (s + w_u_l)) 
+# Wu_tf = (s / (s + w_u_l)) 
 
 
 Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).ravel(),
