@@ -68,7 +68,7 @@ slope = 2.437 #From step response data
 max_LPM = max_V * slope  # Dummy value. You must change. 
 
 # Normalize. 
-#normalization constants:
+# normalization constants:
 SD_noise = 0.107 #LPM
 
 r_nor = max_LPM #LPM
@@ -87,6 +87,7 @@ e_nor_d = 0.01 * max_LPM #LPM
 w_r_h_Hz = 0.015  # Hz
 w_n_Hz = 3 # Hz
 
+# Normalize plant relative to tracking requirements
 P0 = P_tilde * u_nor_r / e_nor_r
 
 P_nom = control.TransferFunction(np.array(P0.num).ravel(), np.array(P0.den).ravel(),
@@ -96,38 +97,25 @@ P_nom = control.TransferFunction(np.array(P0.num).ravel(), np.array(P0.den).rave
 
 control.bode([P_nom, W2], w_shared, Hz=True)
 
-
 # %%
-# Other weights
+# Performance Weighing Functions
+# All first order filters that represent bandwidth of priority
 
 w_r_h = Hz2rps(w_r_h_Hz)
 
-#Reference Scaling
-# R = control.TransferFunction([1], [r_nor],
-#                               inputs=["r_tilde"],
-#                               outputs=["r_scaled"],
-#                               name="R")
-
-# N = control.TransferFunction([1], [SD_noise],
-#                               inputs=["n_tilde"],
-#                               outputs=["n_scaled"],
-#                               name="N")
-
-
 Wr_tf = (1 / (s / w_r_h + 1))
-# Wr_tf = control.tf([1],[1])
 Wr = control.tf(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
                 inputs=["r"], outputs=["r_f"], name="Wr")
 
 
 w_n_l = Hz2rps(w_n_Hz)
-# Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
-Wn_tf = control.tf([1], [1])
 Wn_tf = (s / (s + w_n_l)) 
 Wn = control.tf(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
                 inputs=["n"], outputs=["n_f"], name="Wn")
 
 
+# Block for normalized exogenous inputs r and n
+# Normalized inputs are rescaled to compute normalized error and control effort
 R = control.tf([r_nor/e_nor_r], [1], inputs=["r_f"], outputs=["r_scaled"], name="R")
 N = control.tf([n_nor/e_nor_r], [1], inputs=["n_f"], outputs=["n_scaled"], name="N")
 
@@ -138,13 +126,8 @@ sum_ideal_error = control.summing_junction(
     name="sum_ideal_error"
 )
 
-k = 2
-epsilon = 10**(-30 / 20)
-Me = 10**(5 / 20)
 w_e = Hz2rps(w_r_h_Hz + 0.1)
-We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
 
-# w_e = Hz2rps(w_r_h_Hz + 0.2)
 We_tf = 1 / (s / (w_e / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
@@ -170,13 +153,6 @@ sum_u = control.summing_junction(
 )
 
 w_u_l = w_e
-Wu_tf = (1 - 1 / (s / w_u_l + 1))**2
-
-wbc = w_e
-Mu = 10**(10/20)
-
-# Wu_tf = ((s + wbc / Mu**(1 / k)) / (s * (epsilon)**(1 / k) + wbc))**k
-
 Wu_tf = (s / (s + w_u_l)) 
 
 
@@ -186,38 +162,7 @@ Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).r
                               name="Wu")
 
 
-
-# Reference weight
-# Dummy value. You must change. 
-
-# Wr_tf = (1 / (s / w_r_h + 1))
-# Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
-#                               inputs=["r"],
-#                               outputs=["r_filtered"],
-#                               name="Wr")
-# # control.bode(Wr)
-
-# # Noise weight
-# # Dummy value. You must change. 
-# w_n_l_Hz = w_r_h_Hz * 50
-# w_n_l = Hz2rps(w_n_l_Hz)
-# Wn_tf = control.TransferFunction([0.2], [1])
-# Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
-#                               inputs=["n"],
-#                               outputs=["n_filtered"],
-#                               name="Wn")
-# control.bode(Wn)
-
-# Control weight
-# Dummy value. You must change. 
-
-# control.bode(Wu)
-
-# Error weight
-
-# control.bode(Wu)
-
-control.bode([We, Wu, Wr, Wn], w_shared, Hz=True)
+control.bode([We, Wu, Wr, Wn], w_shared, Hz=True, plot_phase=False, dB=True, title='')
 
 """
 # Interconnect
@@ -322,16 +267,30 @@ print("Controller (TransferFunction):\n", C, "\n")
 
 # Closed-loop T(s) and S(s) transfer functions.
 S = control.feedback(1, P_nom * K, -1)
+S = control.TransferFunction(np.array(S.num).ravel(), np.array(S.den).ravel(),
+                              name="S")
 T = control.feedback(P_nom * K, 1, -1)
+T = control.TransferFunction(np.array(T.num).ravel(), np.array(T.den).ravel(),
+                              name="T")
+
+CS = C * S
+CS = control.TransferFunction(np.array(CS.num).ravel(), np.array(CS.den).ravel(),
+                              name="CS")
+
+We_inv = control.TransferFunction(np.array((1/We).num).ravel(), np.array((1/We).den).ravel(),
+                              name="1/We")
+
+Wu_inv = control.TransferFunction(np.array((1/Wu).num).ravel(), np.array((1/Wu).den).ravel(),
+                              name="1/Wu")
 
 fig, ax = plt.subplots()
-control.bode([1 / (1 + C * P_nom), 1/We], w_shared, Hz=True)
+control.bode([S, We_inv], w_shared, Hz=True, dB=True, plot_phase=False, title='', ax=ax)
 
 fig, ax = plt.subplots()
-control.bode([S, T], w_shared, Hz=True)
+control.bode([S, T], w_shared, Hz=True, dB=True, plot_phase=False, title='', ax=ax)
 
 fig, ax = plt.subplots()
-control.bode([C*S, 1/Wu], w_shared, Hz=True)
+control.bode([CS, Wu_inv], w_shared, Hz=True, dB=True, plot_phase=False, title='', ax=ax)
 
 # %%
 # Reference
@@ -398,7 +357,8 @@ temp_norm = (temp_raw - temp_raw_min) / (temp_raw_max - temp_raw_min)
 
 # Define Reference in terms of flow rate
 # Convert temp into a reference LPM
-r_raw_tilde = temp_norm * max_LPM
+# r_raw_tilde = temp_norm * max_LPM
+r_raw_tilde = temp_norm
 
 # Now filter using w_r_h
 a = w_r_h
@@ -422,7 +382,7 @@ plt.show()
 np.random.seed(123321)
 noise_raw = np.random.normal(0, 1, t.shape[0])
 sigma_n = SD_noise  # LPM, dummy value. You must change. 
-noise =  sigma_n * noise_raw * 1  # Change the 1 to a zero to ``turn off" noise in order to debug. 
+noise =  sigma_n * noise_raw * 0  # Change the 1 to a zero to ``turn off" noise in order to debug. 
 
 
 # %%

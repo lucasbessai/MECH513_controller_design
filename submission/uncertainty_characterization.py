@@ -25,12 +25,12 @@ def fit_and_plot(R_list, w, title, nW2, color_W='k'):
     # Plot residuals vs bound
     fig, ax = plt.subplots(figsize=(6.5, 6.5/gr))
     for R in R_list:
-        ct.bode_plot(R, w, dB=True, deg=True, title='', plot_phase=False, linestyle='dashed', color='C0', label='')
+        ct.bode_plot(R, w, dB=True, Hz=True, title='', plot_phase=False, linestyle='dashed', color='C0', label='')
     ax.semilogx(w, mag_max_dB, label=r'upper bound: $maxR|(j\omega)|$', color='C1')
-    ct.bode_plot(W2, w, dB=True, deg=True, title='', plot_phase=False, label=r'fit bound: $W_2(j\omega)$', color='C3')
+    ct.bode_plot(W2, w, dB=True, Hz=True, title='', plot_phase=False, label=r'fit bound: $W_2(j\omega)$', color='C3')
     ax.set_xlabel(r'$\omega$ (rad/s)')
     ax.set_ylabel(r'Residual (dB)')
-    ax.set_title(f'{title} (order={nW2})')
+    # ax.set_title(f'{title} (order={nW2})')
     ax.legend()
     
     fig.tight_layout()
