@@ -124,20 +124,12 @@ w_r_h = Hz2rps(w_r_h_Hz)
 
 
 Wr_tf = (1 / (s / w_r_h + 1))
-<<<<<<< HEAD
 Wr = control.tf(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
                 inputs=["r"], outputs=["r_f"], name="Wr")
-=======
-Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
-                              inputs=["r_tilde"],
-                              outputs=["r_filtered"],
-                              name="Wr")
->>>>>>> a9700b9dda3f4add4ed48c5b580767d965c10185
 
 
 w_n_l = Hz2rps(w_n_Hz)
 Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
-<<<<<<< HEAD
 Wn_tf = control.tf([1], [1])
 Wn = control.tf(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
                 inputs=["n"], outputs=["n_f"], name="Wn")
@@ -146,12 +138,6 @@ Wn = control.tf(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
 R = control.tf([r_nor/e_nor_r], [1], inputs=["r_f"], outputs=["r_scaled"], name="R")
 N = control.tf([n_nor/e_nor_r], [1], inputs=["n_f"], outputs=["n_scaled"], name="N")
 
-=======
-Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
-                              inputs=["n_tilde"],
-                              outputs=["n_filtered"],
-                              name="Wn")
->>>>>>> a9700b9dda3f4add4ed48c5b580767d965c10185
 
 sum_ideal_error = control.summing_junction(
     inputs=["r_scaled", "-y0"],
@@ -162,13 +148,8 @@ sum_ideal_error = control.summing_junction(
 k = 2
 epsilon = 10**(-30 / 20)
 Me = 10**(5 / 20)
-<<<<<<< HEAD
 w_e = Hz2rps(w_r_h_Hz + 0.1)
 We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
-=======
-w_e = Hz2rps(w_r_h_Hz + 0.2)
-#We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
->>>>>>> a9700b9dda3f4add4ed48c5b580767d965c10185
 
 # w_e = Hz2rps(w_r_h_Hz + 0.2)
 We_tf = 1 / (s / (w_e / 1) + 1)
@@ -208,7 +189,7 @@ Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).r
                               outputs=["z[0]"],
                               name="Wu")
 
-
+#yo yo yo yo
 
 # Reference weight
 # Dummy value. You must change. 
@@ -302,11 +283,7 @@ dk_iter = dkpy.DkIterAutoOrder(
     max_mu=1,
     max_mu_fit_error=1e-2,
     max_iterations=5,
-<<<<<<< HEAD
     max_fit_order=2,
-=======
-    max_fit_order=3,
->>>>>>> a9700b9dda3f4add4ed48c5b580767d965c10185
 )
 
 # Uncertainty structure: 1×1 (uncertainty) + 2×2 (performance) = 3×3 Delta
