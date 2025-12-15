@@ -69,7 +69,6 @@ slope = 2.437 #From step response data
 max_LPM = max_V * slope  # Dummy value. You must change. 
 
 # Normalize. 
-# Dummy value. You must change. 
 #normalization constants:
 SD_noise = 0.107 #LPM
 
@@ -89,7 +88,9 @@ e_nor_d = 0.01 * max_LPM #LPM
 w_r_h_Hz = 0.015  # Hz
 w_n_Hz = 3 # Hz
 
-P_nom = control.TransferFunction(np.array(P_tilde.num).ravel(), np.array(P_tilde.den).ravel(),
+P0 = P_tilde * u_nor_r / e_nor_r
+
+P_nom = control.TransferFunction(np.array(P0.num).ravel(), np.array(P0.den).ravel(),
                               inputs=["u_total"],
                               outputs=["y0"], 
                               name="P_nom")
@@ -115,48 +116,48 @@ w_r_h = Hz2rps(w_r_h_Hz)
 
 
 Wr_tf = (1 / (s / w_r_h + 1))
-Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
-                              inputs=["r"],
-                              outputs=["r_filtered"],
-                              name="Wr")
+Wr = control.tf(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
+                inputs=["r"], outputs=["r_f"], name="Wr")
 
 
 w_n_l = Hz2rps(w_n_Hz)
 Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
-Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
-                              inputs=["n"],
-                              outputs=["n_filtered"],
-                              name="Wn")
+Wn_tf = control.tf([1], [1])
+Wn = control.tf(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
+                inputs=["n"], outputs=["n_f"], name="Wn")
+
+
+R = control.tf([r_nor/e_nor_r], [1], inputs=["r_f"], outputs=["r_scaled"], name="R")
+N = control.tf([n_nor/e_nor_r], [1], inputs=["n_f"], outputs=["n_scaled"], name="N")
+
 
 sum_ideal_error = control.summing_junction(
-    inputs=["r_filtered", "-y0"],
+    inputs=["r_scaled", "-y0"],
     outputs=["e_ideal"],
     name="sum_ideal_error"
 )
 
-# Dummy value. You must change.
-
 k = 2
 epsilon = 10**(-30 / 20)
 Me = 10**(5 / 20)
-w_e = Hz2rps(w_r_h_Hz + 0.2)
+w_e = Hz2rps(w_r_h_Hz + 0.1)
 We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
 
 # w_e = Hz2rps(w_r_h_Hz + 0.2)
-# We_tf = 1 / (s / (w_e / 1) + 1)
+We_tf = 1 / (s / (w_e / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
                               outputs=["z[1]"],
                               name="We")
 
 sum_noise = control.summing_junction(
-    inputs = ["n_filtered","y0"],
+    inputs = ["n_scaled","y0"],
     outputs = ["yn"],
     name = "sum_noise"
 )
 
 sum_error = control.summing_junction(
-    inputs = ["r_filtered","-yn"],
+    inputs = ["r_scaled","-yn"],
     outputs = ["e"],
     name = "sum_error"
 )
@@ -169,6 +170,11 @@ sum_u = control.summing_junction(
 
 w_u_l = w_e
 Wu_tf = (1 - 1 / (s / w_u_l + 1))**2
+
+wbc = w_e
+Mu = 10**(10/20)
+
+# Wu_tf = ((s + wbc / Mu**(1 / k)) / (s * (epsilon)**(1 / k) + wbc))**k
 
 Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).ravel(),
                               inputs=["u"],
@@ -226,10 +232,10 @@ control.bode([We, Wu, Wr, Wn], w_shared, Hz=True)
 #   Inputs:  [u_Delta, r_tilde, n_tilde, u]  → uncertainty first, then disturbances, then control
 #   Outputs: [y_Delta, z[1], z[0], e]        → uncertainty first, then performance, then controller
 P = control.interconnect(
-    syslist=[Wr, Wn, sum_ideal_error, We, Wu, sum_noise, sum_error, sum_u, W2, P_nom],
-    inplist=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
+    syslist=[R, N, Wr, Wn, sum_ideal_error, We, Wu, sum_noise, sum_error, sum_u, W2, P_nom],
+    inplist=['u_Delta', 'r', 'n', 'u'],
     outlist=['y_Delta', 'z[1]', 'z[0]', 'e'],
-    inputs=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
+    inputs=['u_Delta', 'r', 'n', 'u'],
     outputs=['y_Delta', 'z[1]', 'z[0]', 'e']
 )
 # print("Generalized plant P:")
@@ -249,6 +255,8 @@ n_u = 1  # Controller output dimension (u)
 
 # DK-iteration setup
 print("Running DK-iteration...")
+import logging
+logging.basicConfig(level=logging.INFO)
 dk_iter = dkpy.DkIterAutoOrder(
     controller_synthesis=dkpy.HinfSynLmi(
         lmi_strictness=1e-7,
@@ -265,8 +273,8 @@ dk_iter = dkpy.DkIterAutoOrder(
     d_scale_fit=dkpy.DScaleFitSlicot(),
     max_mu=1,
     max_mu_fit_error=1e-2,
-    max_iterations=10,
-    max_fit_order=5,
+    max_iterations=5,
+    max_fit_order=2,
 )
 
 # Uncertainty structure: 1×1 (uncertainty) + 2×2 (performance) = 3×3 Delta
@@ -312,13 +320,13 @@ print("Controller (TransferFunction):\n", C, "\n")
 S = control.feedback(1, P_nom * K, -1)
 T = control.feedback(P_nom * K, 1, -1)
 
-# fig, ax = plt.subplots()
+fig, ax = plt.subplots()
 control.bode([1 / (1 + C * P_nom), 1/We], w_shared, Hz=True)
 
-# fig, ax = plt.subplots()
+fig, ax = plt.subplots()
 control.bode([S, T], w_shared, Hz=True)
 
-# fig, ax = plt.subplots()
+fig, ax = plt.subplots()
 control.bode([C*S, 1/Wu], w_shared, Hz=True)
 
 # %%
