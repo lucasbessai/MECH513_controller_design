@@ -99,41 +99,64 @@ control.bode([P_nom, W2], w_shared, Hz=True)
 
 # %%
 # Other weights
-w_r_h_Hz = 1
+
 w_r_h = Hz2rps(w_r_h_Hz)
 
 #Reference Scaling
-R = control.TransferFunction([1], [r_nor],
-                              inputs=["r_tilde"],
-                              outputs=["r_scaled"],
-                              name="R")
+# R = control.TransferFunction([1], [r_nor],
+#                               inputs=["r_tilde"],
+#                               outputs=["r_scaled"],
+#                               name="R")
 
-N = control.TransferFunction([1], [SD_noise],
-                              inputs=["n_tilde"],
-                              outputs=["n_scaled"],
-                              name="N")
+# N = control.TransferFunction([1], [SD_noise],
+#                               inputs=["n_tilde"],
+#                               outputs=["n_scaled"],
+#                               name="N")
+
+
+Wr_tf = (1 / (s / w_r_h + 1))
+Wr = control.TransferFunction(np.array(Wr_tf.num).ravel(), np.array(Wr_tf.den).ravel(),
+                              inputs=["r"],
+                              outputs=["r_filtered"],
+                              name="Wr")
+
+
+w_n_l = Hz2rps(w_n_Hz)
+Wn_tf = (0.2 / (s / (w_n_l * 100)  + 1))
+Wn = control.TransferFunction(np.array(Wn_tf.num).ravel(), np.array(Wn_tf.den).ravel(),
+                              inputs=["n"],
+                              outputs=["n_filtered"],
+                              name="Wn")
 
 sum_ideal_error = control.summing_junction(
-    inputs=["r_scaled", "y0"],
+    inputs=["r_filtered", "-y0"],
     outputs=["e_ideal"],
     name="sum_ideal_error"
 )
 
-# Dummy value. You must change. 
-We_tf = 1 / (s / (w_r_h / 1) + 1)
+# Dummy value. You must change.
+
+k = 2
+epsilon = 10**(-30 / 20)
+Me = 10**(5 / 20)
+w_e = Hz2rps(w_r_h_Hz + 0.2)
+We_tf = ((s / Me**(1 / k) + w_e) / (s + w_e * (epsilon)**(1 / k)))**k
+
+# w_e = Hz2rps(w_r_h_Hz + 0.2)
+# We_tf = 1 / (s / (w_e / 1) + 1)
 We = control.TransferFunction(np.array(We_tf.num).ravel(), np.array(We_tf.den).ravel(),
                               inputs=["e_ideal"],
                               outputs=["z[1]"],
                               name="We")
 
 sum_noise = control.summing_junction(
-    inputs = ["n_scaled","y0"],
+    inputs = ["n_filtered","y0"],
     outputs = ["yn"],
     name = "sum_noise"
 )
 
 sum_error = control.summing_junction(
-    inputs = ["r_scaled","-yn"],
+    inputs = ["r_filtered","-yn"],
     outputs = ["e"],
     name = "sum_error"
 )
@@ -144,8 +167,8 @@ sum_u = control.summing_junction(
     name = "sum_u"
 )
 
-w_u_l_Hz = w_r_h_Hz * 5
-Wu_tf = (1 - 1 / (s / Hz2rps(w_u_l_Hz) + 1))**2
+w_u_l = w_e
+Wu_tf = (1 - 1 / (s / w_u_l + 1))**2
 
 Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).ravel(),
                               inputs=["u"],
@@ -184,7 +207,7 @@ Wu = control.TransferFunction(np.array(Wu_tf.num).ravel(), np.array(Wu_tf.den).r
 
 # control.bode(Wu)
 
-control.bode([We, Wu], w_shared, Hz=True)
+control.bode([We, Wu, Wr, Wn], w_shared, Hz=True)
 
 """
 # Interconnect
@@ -203,7 +226,7 @@ control.bode([We, Wu], w_shared, Hz=True)
 #   Inputs:  [u_Delta, r_tilde, n_tilde, u]  → uncertainty first, then disturbances, then control
 #   Outputs: [y_Delta, z[1], z[0], e]        → uncertainty first, then performance, then controller
 P = control.interconnect(
-    syslist=[R, N, sum_ideal_error, We, Wu, sum_noise, sum_error, sum_u, W2, P_nom],
+    syslist=[Wr, Wn, sum_ideal_error, We, Wu, sum_noise, sum_error, sum_u, W2, P_nom],
     inplist=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
     outlist=['y_Delta', 'z[1]', 'z[0]', 'e'],
     inputs=['u_Delta', 'r_tilde', 'n_tilde', 'u'],
@@ -262,12 +285,10 @@ print(f"DK-iteration complete: μ = {mu:.4f}, iterations = {len(iter_results)}, 
 
 print("K = ", K)
 
-# print(f"mu={mu}")
+print(f"mu={mu}")
+
 
 #USE HINFSYN FIRST TO GET A CONTROLLER
-
-
-
 
 # Extract controller from hinfsyn output
 # hinfsyn returns (K, N, gamma, info) where:
@@ -284,6 +305,21 @@ print("K = ", K)
 C = control.ss2tf(K)
 print("Controller (TransferFunction):\n", C, "\n")
 
+# %% 
+# Bode Plot of important closed loop transfer functions
+
+# Closed-loop T(s) and S(s) transfer functions.
+S = control.feedback(1, P_nom * K, -1)
+T = control.feedback(P_nom * K, 1, -1)
+
+# fig, ax = plt.subplots()
+control.bode([1 / (1 + C * P_nom), 1/We], w_shared, Hz=True)
+
+# fig, ax = plt.subplots()
+control.bode([S, T], w_shared, Hz=True)
+
+# fig, ax = plt.subplots()
+control.bode([C*S, 1/Wu], w_shared, Hz=True)
 
 # %%
 # Reference
